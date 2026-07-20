@@ -5,6 +5,7 @@ public record InputSnapshot(
 	string RawText, 
 	int BackspaceCount,
 	bool WasFullRewrite,
+	bool TriedBlankSubmission,
 	double HesitationMs,
 	bool WasInvalid
 );
