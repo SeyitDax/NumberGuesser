@@ -1,4 +1,6 @@
-namespace NumberGuesser.Core;
+namespace NumberGuesser.Tracking;
+
+using NumberGuesser.Core;
 using NumberGuesser.Models;
 using System.Text;
 

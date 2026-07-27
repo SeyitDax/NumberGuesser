@@ -1,5 +1,6 @@
 ﻿using NumberGuesser.Core;
 using NumberGuesser.Models;
+using NumberGuesser.Tracking;
 
 public class Program
 {
