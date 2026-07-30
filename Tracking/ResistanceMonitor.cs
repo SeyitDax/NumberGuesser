@@ -1,5 +1,8 @@
 namespace NumberGuesser.Tracking;
+
 using System.Runtime.InteropServices;
+using NumberGuesser.Core;
+using NumberGuesser.Core.Events;
 
 public class ResistanceMonitor : IDisposable
 {
@@ -18,22 +21,15 @@ public class ResistanceMonitor : IDisposable
 	[DllImport("user32.dll")]
 	private static extern IntPtr GetConsoleWindow();	
 
-	private ConsoleCancelEventHandler _cancelEventHandler;
 	private CancellationTokenSource _cts;
 	private CancellationToken _token;
 	private Task _task;
 
-	public ResistanceMonitor()
+	public ResistanceMonitor(EventBus eventBus)
 	{
-	
 		_cts = new();
 		_task = Task.CompletedTask;
-
-		_cancelEventHandler = (sender, e) =>
-		{
-			e.Cancel = true;
-			_ctrlCAttempts++;
-		};
+		eventBus.Subscribe<CtrlCPressedEvent>( e => _ctrlCAttempts++ );
 	}
 
 	public void Start()	
@@ -45,7 +41,6 @@ public class ResistanceMonitor : IDisposable
 
 			_token = _cts.Token;
 
-			Console.CancelKeyPress += _cancelEventHandler;
 			_task = Task.Run(async () =>
 			{
 				try
@@ -82,7 +77,6 @@ public class ResistanceMonitor : IDisposable
 			_monitoring = false;
 			_cts.Cancel();
 			_task.Wait();
-			Console.CancelKeyPress -= _cancelEventHandler;
 			_cts.Dispose();
 		}
 	}

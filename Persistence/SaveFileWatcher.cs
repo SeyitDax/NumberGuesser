@@ -1,6 +1,6 @@
 namespace NumberGuesser.Persistence;
 using NumberGuesser.Core;
-using NumberGuesser.Models;
+using NumberGuesser.Core.Events;
 
 public class SaveFileWatcher : IDisposable
 {
