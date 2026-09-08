@@ -1,6 +1,6 @@
 namespace NumberGuesser.Models;
 
-public record PlayerProfile( string Name, string Email)
+public record PlayerProfile(string Name)
 {
 	public TraitVector Traits { get; init; } = new();
 	public SessionData Session { get; init; } = new SessionData(
