@@ -9,16 +9,25 @@ using NumberGuesser.Models;
 public class SessionStore
 {
 	private readonly string _storagePath;
+	private readonly string _saveFileStatusPath;
 	private readonly string _password;
 
 	private readonly EncryptedFileManager _encryptedFileManager;
-	private bool newPlayer;
 
-	public SessionStore()
+	private List<string> _errorsEncountered;
+	private SaveFileStatus _saveFileStatus;
+	public bool NewPlayer { get; private set; }
+
+	public SessionStore(List<string> errorsEncountered)
 	{
 		_storagePath = GetSessionPath();
+		_saveFileStatusPath = GetSaveFileStatusPath();
 		_password = DerivePassword();
 		_encryptedFileManager = new EncryptedFileManager();
+
+		_errorsEncountered = errorsEncountered;
+
+		_saveFileStatus = LoadSaveFileStatus();
 	}
 
 	public void SavePlayerProfile(PlayerProfile playerProfile)
@@ -29,32 +38,79 @@ public class SessionStore
 	
 	public PlayerProfile LoadPlayerProfile()
 	{
-		var jsonProfile = String.Empty;
 		try
 		{
-			jsonProfile = _encryptedFileManager.DecryptFromFile(_storagePath, _password);
-		}
-		catch (Exception ex)
-		{
-			newPlayer = true;
-		}
-
-		if (!String.IsNullOrEmpty(jsonProfile))
-		{
+			var jsonProfile = _encryptedFileManager.DecryptFromFile(_storagePath, _password);
 			var playerProfile = JsonSerializer.Deserialize<PlayerProfile>(jsonProfile);
 			if(playerProfile != null)
 				return playerProfile;
 		}
+		catch (FileNotFoundException)
+		{
+			if (!_saveFileStatus.Deleted)
+			{
+				NewPlayer = true;
+			}
+		}
+		catch (IOException ex)
+		{
+			_errorsEncountered.Add(ex.Message);
+		}
+		catch (CryptographicException ex)
+		{
+			_errorsEncountered.Add(ex.Message);
+		}
 
 		return new PlayerProfile(Environment.UserName);
+	}
+
+	public void SaveSaveFileStatus(SaveFileStatus status)
+	{
+		var jsonProfile = JsonSerializer.Serialize(status);
+		_encryptedFileManager.EncryptToFile(_saveFileStatusPath, jsonProfile, _password);
+	}
+
+	public SaveFileStatus LoadSaveFileStatus()
+	{
+
+		try
+		{
+			var jsonProfile = _encryptedFileManager.DecryptFromFile(_saveFileStatusPath, _password);
+			var saveFileStatus = JsonSerializer.Deserialize<SaveFileStatus>(jsonProfile);
+			if(saveFileStatus != null)
+				return saveFileStatus;
+		}
+		catch (FileNotFoundException)
+		{
+			return new SaveFileStatus(
+				Timestamp:DateTime.Now,
+				CreatedOnce:false,
+				RunCount:0,
+				FileStatus.SaveDeleted);
+		}
+		catch (IOException ex)
+		{
+			_errorsEncountered.Add(ex.Message);
+		}
+		catch (CryptographicException ex)
+		{
+			_errorsEncountered.Add(ex.Message);
+		}
+
+		return new SaveFileStatus(
+				Timestamp:DateTime.Now,
+				CreatedOnce:true,
+				RunCount:0,
+				FileStatus.SaveExist);
+
 	}
 	
 	private string GetSessionPath()
 	{
-		var numberGuesserDataDir = Path.Combine(Environment.GetFolderPath(
+		var saveFileDataDir = Path.Combine(Environment.GetFolderPath(
 					Environment.SpecialFolder.LocalApplicationData),
-					"NumberGuesser");
-		Directory.CreateDirectory(numberGuesserDataDir);
+					"ng");
+		Directory.CreateDirectory(saveFileDataDir);
 
 		var seedTag = "F2hf9T1Ksr*^@qp22bH9@5KlN&o9Er";
 	
@@ -65,9 +121,28 @@ public class SessionStore
 		var seed16 = hexSeed[..16];
 
 		// Creating the path using the generated seed
-		var path = Path.Combine(numberGuesserDataDir, seed16 + ".dat");
+		var path = Path.Combine(saveFileDataDir, seed16 + ".dat");
 
-return path;
+		return path;
+	}
+
+	private string GetSaveFileStatusPath()
+	{
+		var statusDataDir = Path.Combine(Environment.GetFolderPath(
+					Environment.SpecialFolder.LocalApplicationData),
+					"ngsfs");
+		Directory.CreateDirectory(statusDataDir);
+	
+		var seedTag = "F2hf9T1Ksr*^@qp22bH9@5KlN&o9Er";
+	
+		var tagBytes = Encoding.UTF8.GetBytes(seedTag);
+		var hashedBytes = SHA256.HashData(tagBytes);
+
+		var hexSeed = Convert.ToHexString(hashedBytes);
+		var seed16 = hexSeed[..16];
+
+		var path = Path.Combine(statusDataDir, seed16 + ".dat");
+		return path;
 	}
 
 	// TODO(release): obscurity-grade, not real protection — MachineName/UserName aren't secret
