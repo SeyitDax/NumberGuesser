@@ -4,7 +4,10 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Security.Cryptography;
+
 using NumberGuesser.Models;
+using NumberGuesser.Core;
+using NumberGuesser.Core.Events;
 
 public class SessionStore
 {
@@ -13,15 +16,17 @@ public class SessionStore
 	private readonly string _password;
 
 	private readonly EncryptedFileManager _encryptedFileManager;
+	private readonly EventBus _eventBus;
 
 	private List<string> _errorsEncountered;
 	private SaveFileStatus _saveFileStatus;
 	public bool NewPlayer { get; private set; }
 
-	public SessionStore(List<string> errorsEncountered)
+	public SessionStore(List<string> errorsEncountered, EventBus eventBus)
 	{
 		_storagePath = GetSessionPath();
 		_saveFileStatusPath = GetSaveFileStatusPath();
+		_eventBus = eventBus;
 		_password = DerivePassword();
 		_encryptedFileManager = new EncryptedFileManager();
 
@@ -45,20 +50,28 @@ public class SessionStore
 			if(playerProfile != null)
 				return playerProfile;
 		}
-		catch (FileNotFoundException)
+		catch (FileNotFoundException ex)
 		{
-			if (!_saveFileStatus.Deleted)
+			_errorsEncountered.Add(ex.Message);
+			if (!_saveFileStatus.CreatedOnce)
 			{
 				NewPlayer = true;
+				return new PlayerProfile(Environment.UserName);
 			}
+
+			_eventBus.Publish(new SaveFileDeletedEvent(_storagePath));
+			return new PlayerProfile(Environment.UserName, FallbackProfile: true);
 		}
 		catch (IOException ex)
 		{
 			_errorsEncountered.Add(ex.Message);
+			return new PlayerProfile(Environment.UserName, FallbackProfile: true);
+			
 		}
 		catch (CryptographicException ex)
 		{
 			_errorsEncountered.Add(ex.Message);
+			return new PlayerProfile(Environment.UserName, FallbackProfile: true);
 		}
 
 		return new PlayerProfile(Environment.UserName);
@@ -66,39 +79,56 @@ public class SessionStore
 
 	public void SaveSaveFileStatus(SaveFileStatus status)
 	{
-		var jsonProfile = JsonSerializer.Serialize(status);
-		_encryptedFileManager.EncryptToFile(_saveFileStatusPath, jsonProfile, _password);
+		var jsonStatus = JsonSerializer.Serialize(status);
+		_encryptedFileManager.EncryptToFile(_saveFileStatusPath, jsonStatus, _password);
 	}
 
 	public SaveFileStatus LoadSaveFileStatus()
 	{
-
 		try
 		{
-			var jsonProfile = _encryptedFileManager.DecryptFromFile(_saveFileStatusPath, _password);
-			var saveFileStatus = JsonSerializer.Deserialize<SaveFileStatus>(jsonProfile);
+			var jsonStatus = _encryptedFileManager.DecryptFromFile(_saveFileStatusPath, _password);
+			var saveFileStatus = JsonSerializer.Deserialize<SaveFileStatus>(jsonStatus);
 			if(saveFileStatus != null)
 				return saveFileStatus;
 		}
-		catch (FileNotFoundException)
+		catch (FileNotFoundException ex) 
 		{
+			_errorsEncountered.Add(ex.Message);
+
 			return new SaveFileStatus(
 				Timestamp:DateTime.Now,
+				Readable: true,
 				CreatedOnce:false,
 				RunCount:0,
-				FileStatus.SaveDeleted);
+				FileStatus.NeverHadSave);
 		}
 		catch (IOException ex)
 		{
 			_errorsEncountered.Add(ex.Message);
+			
+			return new SaveFileStatus(
+				Timestamp:DateTime.Now,
+				Readable: false,
+				CreatedOnce:false,
+				RunCount:0,
+				FileStatus.NeverHadSave);
 		}
 		catch (CryptographicException ex)
 		{
 			_errorsEncountered.Add(ex.Message);
+			
+			return new SaveFileStatus(
+				Timestamp:DateTime.Now,
+				Readable: false,
+				CreatedOnce:false,
+				RunCount:0,
+				FileStatus.NeverHadSave);
 		}
 
 		return new SaveFileStatus(
 				Timestamp:DateTime.Now,
+				Readable: true,
 				CreatedOnce:true,
 				RunCount:0,
 				FileStatus.SaveExist);
